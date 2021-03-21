@@ -24,4 +24,12 @@ create the project
 
   modify the project board files
 
+    $ git mv ble_app_uart_c_pca10056_s140.emProject dongle7_nus_c_pca10059_s140.emProject
+    $ git mv ble_app_uart_c_pca10056_s140.emSession dongle7_nus_c_pca10059_s140.emSession
+
+  in vi change all ble_app_uart_c_pca10056 to dongle7_nus_c_pca10059, three places:
+
+    $ vi dongle7_nus_c_pca10059_s140.emProject
+    $ vi dongle7_nus_c_pca10059_s140.emSession
+
 

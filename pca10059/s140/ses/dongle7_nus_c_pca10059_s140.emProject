@@ -1,6 +1,6 @@
 <!DOCTYPE CrossStudio_Project_File>
-<solution Name="ble_app_uart_c_pca10056_s140" target="8" version="2">
-  <project Name="ble_app_uart_c_pca10056_s140">
+<solution Name="dongle7_nus_c_pca10059_s140" target="8" version="2">
+  <project Name="dongle7_nus_c_pca10059_s140">
     <configuration
       Name="Common"
       arm_architecture="v7EM"
