@@ -96,6 +96,21 @@ static ble_uuid_t const m_nus_uuid =
     .type = NUS_SERVICE_UUID_TYPE
 };
 
+/**@brief custom service NUS UUID. */
+static ble_uuid128_t const m_custom_nus_uuid128 = NUS_BASE_UUID; /* modified by scan_init() to have the service uuid */
+
+/**@brief custom address to connect to. */
+static ble_gap_addr_t const m_custom_nus_addr =
+{
+    .addr_id_peer = 0, 
+    .addr_type = 0,
+    .addr = {0, 0, 0, 0, 0, 0} /* uint8_t addr[BLE_GAP_ADDR_LEN]; in ble_gap.h */
+};
+
+/**@brief custom steps. */
+static volatile uint32_t custom_scan_step = 0; /* 1:scan_init(), 2:found uuid, 3:scan_init2() */
+static volatile uint32_t custom_scan_sample_count = 0;
+
 
 /**@brief Function for handling asserts in the SoftDevice.
  *
@@ -187,6 +202,16 @@ static void scan_init(void)
 
     memset(&init_scan, 0, sizeof(init_scan));
 
+#if 1 /* set to 1 to do scan only */
+    //m_custom_nus_uuid128.uuid128[12] = (uint8_t)(m_nus_uuid.uuid & 0xff);
+    //m_custom_nus_uuid128.uuid128[13] = (uint8_t)( (m_nus_uuid.uuid >> 8) & 0xff);
+
+    init_scan.connect_if_match = false;
+    init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
+
+    err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
+    APP_ERROR_CHECK(err_code);
+#else
     init_scan.connect_if_match = true;
     init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
 
@@ -197,6 +222,29 @@ static void scan_init(void)
     APP_ERROR_CHECK(err_code);
 
     err_code = nrf_ble_scan_filters_enable(&m_scan, NRF_BLE_SCAN_UUID_FILTER, false);
+    APP_ERROR_CHECK(err_code);
+#endif
+}
+
+/**@brief Function for initializing the scanning and setting the filters.
+ */
+static void scan_init2(void)
+{
+    ret_code_t          err_code;
+    nrf_ble_scan_init_t init_scan;
+
+    memset(&init_scan, 0, sizeof(init_scan));
+
+    init_scan.connect_if_match = true;
+    init_scan.conn_cfg_tag     = APP_BLE_CONN_CFG_TAG;
+
+    err_code = nrf_ble_scan_init(&m_scan, &init_scan, scan_evt_handler);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_ble_scan_filter_set(&m_scan, SCAN_ADDR_FILTER, &m_custom_nus_addr.addr);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_ble_scan_filters_enable(&m_scan, NRF_BLE_SCAN_ADDR_FILTER, false);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -382,6 +430,44 @@ static bool shutdown_handler(nrf_pwr_mgmt_evt_t event)
 
 NRF_PWR_MGMT_HANDLER_REGISTER(shutdown_handler, APP_SHUTDOWN_HANDLER_PRIORITY);
 
+/**
+ * @brief Function for decoding full-name and service-uuid in adv data.
+ *
+ * @param[in]   type        data type to parse for.
+ * @param[in]   p_advdata   pointer to input advdata.
+ * @param[in]   p_typedata  pointer to output result data.
+ */
+#if 0
+static uint32_t custom_adv_report_parse(uint8_t type, const ble_data_t * p_advdata, ble_data_t * p_typedata)
+{
+    uint32_t index = 0;
+    uint8_t * p_data;
+
+    VERIFY_PARAM_NOT_NULL(p_advdata);
+    VERIFY_PARAM_NOT_NULL(p_typedata);
+
+    p_data = p_advdata->p_data;
+    VERIFY_PARAM_NOT_NULL(p_data);
+
+    VERIFY_TRUE(p_advdata->len < 32, NRF_ERROR_INVALID_LENGTH); /* 31 is the max adv data */
+
+    while (index < p_advdata->len)
+    {
+        uint8_t field_length = p_data[index];
+        uint8_t field_type = p_data[index+1];
+
+        if (field_type == type)
+        {
+            p_typedata->p_data = &p_data[index+2];
+            p_typedata->len = field_length-1;
+            return NRF_SUCCESS;
+        }
+        index += field_length+1;
+    }
+    return NRF_ERROR_NOT_FOUND;
+}
+#endif
+
 
 /**@brief Function for handling BLE events.
  *
@@ -419,6 +505,83 @@ static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
             {
                 NRF_LOG_INFO("Connection Request timed out.");
             }
+            break;
+
+        case BLE_GAP_EVT_ADV_REPORT:
+        {   const ble_gap_evt_adv_report_t *rpt = &p_gap_evt->params.adv_report;
+            int connectable_flag = rpt->type.connectable;
+            int scannable_flag   = rpt->type.scannable;
+            int scanresp_flag    = rpt->type.scan_response;
+            int status           = rpt->type.status;
+
+            const ble_gap_addr_t *peer_addr = &rpt->peer_addr;
+            const ble_data_t     *adv_data  = &rpt->data;
+
+            custom_scan_sample_count ++;
+            NRF_LOG_INFO("Scanning update %u ... flags %d %d %d", custom_scan_sample_count, 
+                          connectable_flag, scannable_flag, scanresp_flag);
+            NRF_LOG_INFO("                        "
+                          "  addr %02x:%02x:%02x:%02x:%02x:%02x ",
+                          peer_addr->addr[0], peer_addr->addr[1], peer_addr->addr[2], 
+                          peer_addr->addr[3], peer_addr->addr[4], peer_addr->addr[5]);
+            NRF_LOG_INFO("%24s  rssi %d  data %u %p",
+                          " ", 
+                          rpt->rssi, 
+                          adv_data->len, adv_data->p_data);
+            if ( status == BLE_GAP_ADV_DATA_STATUS_COMPLETE && 
+                  rpt->rssi > -70 && 
+                  connectable_flag && scannable_flag ) {
+                if (scanresp_flag == 0) {
+                    ble_data_t name_data = {0, 0};
+                    //err_code = custom_adv_report_parse(BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, 
+                    //                                    adv_data, &name_data);
+                    //APP_ERROR_CHECK(err_code);
+                    if ( name_data.len > 0 && name_data.p_data ) {
+                        NRF_LOG_INFO("%24s  found full name  data %u %p",
+                                      " ", 
+                                      name_data.len, name_data.p_data);
+                    } else {
+                        NRF_LOG_INFO("%24s  found no full name  data", " ");
+                    }
+                } else {
+                    ble_data_t service_data = {0, 0};
+                    //err_code = custom_adv_report_parse(BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_COMPLETE, 
+                    //                                    adv_data, &service_data);
+                    //APP_ERROR_CHECK(err_code);
+                    if ( service_data.len > 0 && service_data.p_data ) {
+                        NRF_LOG_INFO("%24s  found full service uuid  data %u %p  at step %u",
+                                      " ", 
+                                      service_data.len, service_data.p_data, 
+                                      custom_scan_step);
+                        #if 0
+                        if ( custom_scan_step == 1 ) {
+                            int match = 1;
+                            for (uint32_t i=0; i<16; i++) {
+                                if ( service_data.len != 16 ) {
+                                    match = 0; break;
+                                }
+                                if ( service_data.p_data[i] != m_custom_nus_uuid128.uuid128[i] ) {
+                                    match = 0; break;
+                                }
+                            }
+                            if ( match ) {
+                                //memcpy((void *)(&m_custom_nus_addr.addr[0]), &peer_addr->addr, 6);
+                                //nrf_ble_scan_stop();
+                                NRF_LOG_INFO("Scanning stop "
+                                              "  to restart on addr %02x:%02x:%02x:%02x:%02x:%02x ",
+                                              m_custom_nus_addr.addr[0], m_custom_nus_addr.addr[1], 
+                                              m_custom_nus_addr.addr[2], m_custom_nus_addr.addr[3], 
+                                              m_custom_nus_addr.addr[4], m_custom_nus_addr.addr[5]);
+                                //custom_scan_step = 2;
+                            }
+                        }
+                        #endif
+                    } else {
+                        NRF_LOG_INFO("%24s  found no full service uuid  data", " ");
+                    }
+                }
+            }
+        }
             break;
 
         case BLE_GAP_EVT_SEC_PARAMS_REQUEST:
@@ -671,16 +834,64 @@ int main(void)
     ble_stack_init();
     gatt_init();
     nus_c_init();
+
+    uint8_t scan_progress = 0;
+    custom_scan_step = 1;
     scan_init();
 
     // Start execution.
     printf("BLE UART central example started.\r\n");
     NRF_LOG_INFO("BLE UART central example started.");
+    scan_progress = 1;
     scan_start();
 
     // Enter main loop.
     for (;;)
     {
         idle_state_handle();
+
+        if ( scan_progress == 1 ) {
+            if ( custom_scan_sample_count >= 30 ) {
+                printf("Scanning stop on 30 samples\r\n");
+                NRF_LOG_WARNING("Scanning stop on 30 samples");
+                nrf_ble_scan_stop();
+                scan_progress = 2;
+            } else 
+            if ( custom_scan_step == 2 ) {
+                printf("Scanning stop on step 2\r\n");
+                NRF_LOG_WARNING("Scanning stop on step 2");
+                nrf_ble_scan_stop();
+                scan_progress = 2;
+            }
+        } else if ( scan_progress == 2 ) {
+            custom_scan_step = 3;
+            scan_init2();
+            scan_progress = 3;
+            scan_start();
+        } else if ( scan_progress == 3 ) {
+            if ( custom_scan_sample_count >= 60 ) {
+                printf("Scanning stop on 60 samples\r\n");
+                NRF_LOG_WARNING("Scanning stop on 60 samples");
+                nrf_ble_scan_stop();
+                scan_progress = 4;
+            }
+        }
+#if 0
+        if ( custom_scan_step >= 3 && custom_scan_step <= 100 ) {
+            custom_scan_step ++;
+            printf("BLE UART central counting up %u.\r\n", custom_scan_step);
+            NRF_LOG_INFO("BLE UART central counting up %u.", custom_scan_step);
+        } else if ( custom_scan_step == 2 ) {
+            custom_scan_step ++;
+            printf("BLE UART central scanned.\r\n");
+            NRF_LOG_INFO("BLE UART central scanned.");
+        } else if ( custom_scan_step == 101 ) {
+            custom_scan_step ++;
+            printf("BLE UART central connecting.\r\n");
+            NRF_LOG_INFO("BLE UART central connecting.");
+            scan_init2();
+            scan_start();
+        }
+#endif
     }
 }

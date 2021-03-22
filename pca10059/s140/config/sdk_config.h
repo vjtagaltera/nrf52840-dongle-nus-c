@@ -286,7 +286,7 @@
 
 // <o> NRF_BLE_SCAN_ADDRESS_CNT - Number of address filters. 
 #ifndef NRF_BLE_SCAN_ADDRESS_CNT
-#define NRF_BLE_SCAN_ADDRESS_CNT 0
+#define NRF_BLE_SCAN_ADDRESS_CNT 1
 #endif
 
 // <o> NRF_BLE_SCAN_APPEARANCE_CNT - Number of appearance filters. 
@@ -7834,7 +7834,7 @@
 // <i> longer one will be fragmented.
 
 #ifndef NRF_LOG_BACKEND_RTT_TEMP_BUFFER_SIZE
-#define NRF_LOG_BACKEND_RTT_TEMP_BUFFER_SIZE 64
+#define NRF_LOG_BACKEND_RTT_TEMP_BUFFER_SIZE 256 /*64*/
 #endif
 
 // <o> NRF_LOG_BACKEND_RTT_TX_RETRY_DELAY_MS - Period before retrying writing to RTT 
@@ -7911,7 +7911,7 @@
 // <16384=> 16384 
 
 #ifndef NRF_LOG_BUFSIZE
-#define NRF_LOG_BUFSIZE 1024
+#define NRF_LOG_BUFSIZE 4096 /*1024*/
 #endif
 
 // <q> NRF_LOG_CLI_CMDS  - Enable CLI commands for the module.
